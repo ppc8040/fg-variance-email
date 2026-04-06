@@ -1,0 +1,29 @@
+name: Daily FG Variance Email
+
+on:
+  schedule:
+    # 2:00 PM Dubai time = 10:00 UTC (Dubai is UTC+4)
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+jobs:
+  send-email:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install msal requests pandas openpyxl
+
+      - name: Run variance email script
+        env:
+          SP_TENANT_ID:      ${{ secrets.SP_TENANT_ID }}
+          SP_CLIENT_ID:      ${{ secrets.SP_CLIENT_ID }}
+          SP_CLIENT_SECRET:  ${{ secrets.SP_CLIENT_SECRET }}
+          MAIL_CLIENT_ID:    ${{ secrets.MAIL_CLIENT_ID }}
+          MAIL_CLIENT_SECRET: ${{ secrets.MAIL_CLIENT_SECRET }}
+        run: python fg_variance_email.py
