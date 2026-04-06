@@ -81,8 +81,8 @@ class SharePointConfig:
     TOTAL_VARIANCE_COL_INDEX = 9
 
 class EmailConfig:
-    SENDER_EMAIL         = "logisticsdbx@indusair.ae"
-    TO_EMAILS            = ["nikhil.metha@indusair.ae"]
+    SENDER_EMAIL         = "siddhesh.mandhana@indusair.ae"
+    TO_EMAILS            = ["onkar.shahane@indusair.ae]
     CC_EMAILS            = []
     SUBJECT              = f"Indus Physical FG vs SAP \u2014 Variance Report [{datetime.now().strftime('%d-%b-%Y')}]"
     ATTACHMENT_FILE_NAME = f"Indus_Physical_FG_vs_SAP_Variance_Report_{datetime.now().strftime('%d-%b-%Y')}.xlsx"
