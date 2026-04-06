@@ -81,8 +81,8 @@ class SharePointConfig:
     TOTAL_VARIANCE_COL_INDEX = 9
 
 class EmailConfig:
-    SENDER_EMAIL         = "siddhesh.mandhana@indusair.ae"
-    TO_EMAILS            = ["onkar.shahane@indusair.ae"]
+    SENDER_EMAIL         = "logisticsdbx@indusair.ae"
+    TO_EMAILS            = ["nikhil.metha@indusair.ae"]
     CC_EMAILS            = []
     SUBJECT              = f"Indus Physical FG vs SAP \u2014 Variance Report [{datetime.now().strftime('%d-%b-%Y')}]"
     ATTACHMENT_FILE_NAME = f"Indus_Physical_FG_vs_SAP_Variance_Report_{datetime.now().strftime('%d-%b-%Y')}.xlsx"
@@ -332,8 +332,7 @@ def build_html_body(variance_df, total_variance):
             ("Final Variance (Physical vs SAP)",  "170px", "#C0392B", "#FFFFFF"),
         ]
         header_row = "".join(
-            f'<th style="background:{bg};color:{fg};padding:8px 10px;"
-               f'width:{w};border:1px solid #CCC;white-space:nowrap;">{col}</th>'
+            f'<th style="background:{bg};color:{fg};padding:8px 10px;width:{w};border:1px solid #CCC;white-space:nowrap;">{col}</th>'
             for col, w, bg, fg in col_cfg
         )
         data_rows_html = ""
@@ -501,7 +500,7 @@ def send_email(mail_token, html_body, excel_bytes):
 # ============================================================
 def main():
     logger.info("=" * 60)
-    logger.info("FG VARIANCE EMAIL REPORTER — START")
+    logger.info("FG VARIANCE EMAIL REPORTER \u2014 START")
     logger.info("=" * 60)
     try:
         sp_token   = get_sharepoint_token()
@@ -512,7 +511,7 @@ def main():
         excel_bytes        = build_excel_attachment(variance_df, total_variance)
         send_email(mail_token, html_body, excel_bytes)
         logger.info("=" * 60)
-        logger.info("FG VARIANCE EMAIL REPORTER — COMPLETE")
+        logger.info("FG VARIANCE EMAIL REPORTER \u2014 COMPLETE")
         logger.info("=" * 60)
     except Exception as e:
         logger.error(f"\u274c Fatal error: {e}")
