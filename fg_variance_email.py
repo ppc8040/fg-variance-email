@@ -19,14 +19,9 @@ The Excel attachment is formatted with borders, fills, alignment, and
 a worksheet name derived from the email subject.
 
 Author: Siddhesh Mandhana
-
-Secrets are read from environment variables (set as GitHub Actions secrets):
-  SP_CLIENT_ID, SP_CLIENT_SECRET, SP_TENANT_ID
-  MAIL_CLIENT_ID, MAIL_CLIENT_SECRET
 """
 
 import base64
-import os
 import re
 import requests
 import pandas as pd
@@ -45,6 +40,7 @@ from openpyxl.utils import get_column_letter
 # SYSTEM SETUP
 # ============================================================
 if sys.platform == "win32":
+    import os
     os.environ["PYTHONIOENCODING"] = "utf-8"
 
 # ============================================================
@@ -58,19 +54,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# CONFIGURATION  (secrets from environment variables)
+# CONFIGURATION
 # ============================================================
-TENANT_ID = os.environ["SP_TENANT_ID"]
-
 class SharePointAuthConfig:
-    CLIENT_ID     = os.environ["SP_CLIENT_ID"]
-    CLIENT_SECRET = os.environ["SP_CLIENT_SECRET"]
-    AUTHORITY     = f"https://login.microsoftonline.com/{TENANT_ID}"
+    CLIENT_ID     = "a2239be7-12cd-442d-983f-ea7e316ef767"
+    CLIENT_SECRET = "sho8Q~sanlYEX3SKXjYJb0NSXL.gPRpdi63-tcmp"
+    AUTHORITY     = "https://login.microsoftonline.com/ed97e9bb-e119-4bd4-ab00-307d64bdf908"
 
 class MailAuthConfig:
-    CLIENT_ID     = os.environ["MAIL_CLIENT_ID"]
-    CLIENT_SECRET = os.environ["MAIL_CLIENT_SECRET"]
-    AUTHORITY     = f"https://login.microsoftonline.com/{TENANT_ID}"
+    CLIENT_ID     = "785b5fc9-1624-458d-90cb-a140dff579c7"
+    CLIENT_SECRET = "Zcw8Q~YSEqXPypF4Gn_mNVpp2MVPRMM.95hjVdbP"
+    AUTHORITY     = "https://login.microsoftonline.com/ed97e9bb-e119-4bd4-ab00-307d64bdf908"
 
 class SharePointConfig:
     SITE_ID              = "201c767f-23cc-4eff-b76c-47a275706531,094b21f9-6ed4-47c3-a751-3b217a18b98e"
@@ -84,14 +78,14 @@ class EmailConfig:
     SENDER_EMAIL         = "logisticsdbx@indusair.ae"
     TO_EMAILS            = ["nikhil.metha@indusair.ae"]
     CC_EMAILS            = []
-    SUBJECT              = f"Indus Physical FG vs SAP \u2014 Variance Report [{datetime.now().strftime('%d-%b-%Y')}]"
+    SUBJECT              = f"Indus Physical FG vs SAP — Variance Report [{datetime.now().strftime('%d-%b-%Y')}]"
     ATTACHMENT_FILE_NAME = f"Indus_Physical_FG_vs_SAP_Variance_Report_{datetime.now().strftime('%d-%b-%Y')}.xlsx"
 
 # ============================================================
 # AUTHENTICATION
 # ============================================================
 def get_sharepoint_token():
-    logger.info("\U0001f510 Acquiring SharePoint access token...")
+    logger.info("🔐 Acquiring SharePoint access token...")
     try:
         app = msal.ConfidentialClientApplication(
             SharePointAuthConfig.CLIENT_ID,
@@ -105,17 +99,17 @@ def get_sharepoint_token():
         if not result:
             result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
         if "access_token" in result:
-            logger.info("\u2705 SharePoint token acquired")
+            logger.info("✅ SharePoint token acquired")
             return result["access_token"]
         raise Exception(result.get("error_description", result.get("error")))
     except Exception as e:
-        logger.error(f"\u274c SharePoint token error: {e}")
+        logger.error(f"❌ SharePoint token error: {e}")
         traceback.print_exc()
         raise
 
 
 def get_mail_token():
-    logger.info("\U0001f510 Acquiring Mail send token...")
+    logger.info("🔐 Acquiring Mail send token...")
     try:
         app = msal.ConfidentialClientApplication(
             MailAuthConfig.CLIENT_ID,
@@ -124,11 +118,11 @@ def get_mail_token():
         )
         result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
         if "access_token" in result:
-            logger.info("\u2705 Mail token acquired")
+            logger.info("✅ Mail token acquired")
             return result["access_token"]
         raise Exception(result.get("error_description", result.get("error")))
     except Exception as e:
-        logger.error(f"\u274c Mail token error: {e}")
+        logger.error(f"❌ Mail token error: {e}")
         traceback.print_exc()
         raise
 
@@ -136,7 +130,7 @@ def get_mail_token():
 # SHAREPOINT READ
 # ============================================================
 def read_worksheet(sp_token):
-    logger.info(f"\U0001f4c2 Reading worksheet: '{SharePointConfig.WORKSHEET_NAME}'")
+    logger.info(f"📂 Reading worksheet: '{SharePointConfig.WORKSHEET_NAME}'")
     session_obj = requests.Session()
     api_headers = {
         "Authorization": f"Bearer {sp_token}",
@@ -158,10 +152,10 @@ def read_worksheet(sp_token):
             timeout=30
         )
         if session_resp.status_code not in (200, 201):
-            raise Exception(f"Failed to create workbook session: {session_resp.status_code} \u2014 {session_resp.text[:300]}")
+            raise Exception(f"Failed to create workbook session: {session_resp.status_code} — {session_resp.text[:300]}")
         session_id = session_resp.json().get("id")
         api_headers["workbook-session-id"] = session_id
-        logger.info(f"\u2705 Workbook session created: {session_id[:30]}...")
+        logger.info(f"✅ Workbook session created: {session_id[:30]}...")
 
         range_url = (
             f"https://graph.microsoft.com/v1.0/sites/{site_id}"
@@ -169,11 +163,11 @@ def read_worksheet(sp_token):
         )
         range_resp = session_obj.get(range_url, headers=api_headers, timeout=120)
         if range_resp.status_code != 200:
-            raise Exception(f"Failed to read usedRange: {range_resp.status_code} \u2014 {range_resp.text[:300]}")
+            raise Exception(f"Failed to read usedRange: {range_resp.status_code} — {range_resp.text[:300]}")
         values = range_resp.json().get("values", [])
-        logger.info(f"\u2705 Raw rows returned from API: {len(values)}")
+        logger.info(f"✅ Raw rows returned from API: {len(values)}")
     except Exception as e:
-        logger.error(f"\u274c Worksheet read error: {e}")
+        logger.error(f"❌ Worksheet read error: {e}")
         traceback.print_exc()
         raise
     finally:
@@ -184,41 +178,41 @@ def read_worksheet(sp_token):
                     f"/drive/root:/{file_name}:/workbook/closeSession"
                 )
                 session_obj.post(close_url, headers=api_headers, timeout=15)
-                logger.info("\u2705 Workbook session closed")
+                logger.info("✅ Workbook session closed")
             except Exception as ce:
-                logger.warning(f"\u26a0\ufe0f Could not close session: {ce}")
+                logger.warning(f"⚠️ Could not close session: {ce}")
 
     total_variance = 0
     try:
         total_variance_raw = values[SharePointConfig.TOTAL_VARIANCE_ROW_INDEX][SharePointConfig.TOTAL_VARIANCE_COL_INDEX]
         total_variance = float(total_variance_raw) if total_variance_raw not in ("", None) else 0
-        logger.info(f"\U0001f4ca Total variance (J2): {total_variance}")
+        logger.info(f"📊 Total variance (J2): {total_variance}")
     except (IndexError, ValueError, TypeError) as e:
-        logger.warning(f"\u26a0\ufe0f Could not read total variance cell: {e}. Defaulting to 0.")
+        logger.warning(f"⚠️ Could not read total variance cell: {e}. Defaulting to 0.")
 
     header_idx = SharePointConfig.HEADER_ROW_INDEX
     if len(values) <= header_idx:
         raise Exception(f"Not enough rows returned. Expected headers at index {header_idx}, but only {len(values)} row(s) found.")
     headers   = values[header_idx]
     data_rows = values[header_idx + 1:]
-    logger.info(f"\U0001f4cb Headers detected: {headers}")
-    logger.info(f"\U0001f4cb Data rows: {len(data_rows)}")
+    logger.info(f"📋 Headers detected: {headers}")
+    logger.info(f"📋 Data rows: {len(data_rows)}")
     if not data_rows:
         raise Exception("No data rows found after header row.")
     df = pd.DataFrame(data_rows, columns=headers)
-    logger.info(f"\u2705 DataFrame built: {df.shape[0]} rows \u00d7 {df.shape[1]} columns")
+    logger.info(f"✅ DataFrame built: {df.shape[0]} rows × {df.shape[1]} columns")
     return df, total_variance
 
 # ============================================================
 # FILTER DATA
 # ============================================================
 def filter_variance_rows(df):
-    logger.info("\U0001f50d Selecting columns and filtering variance rows...")
+    logger.info("🔍 Selecting columns and filtering variance rows...")
     total_cols = df.shape[1]
     logger.info(f"  Total columns available: {total_cols}")
     if total_cols < 10:
         raise Exception(
-            f"Expected at least 10 columns (A\u2013J), but got {total_cols}. "
+            f"Expected at least 10 columns (A–J), but got {total_cols}. "
             f"Check HEADER_ROW_INDEX (currently {SharePointConfig.HEADER_ROW_INDEX})."
         )
     df_sel = df.iloc[:, [0, 1, 4, 7, 8, 9]].copy()
@@ -251,7 +245,7 @@ def filter_variance_rows(df):
     result = df_sel[df_sel["Final Variance (Physical vs SAP)"] != 0].copy()
     for col in ["Physical Warehouse Total", "Production FG Total", "SAP Quantities (1000+2000)"]:
         result[col] = result[col].fillna(0)
-    logger.info(f"\u2705 Variance rows found: {len(result)} out of {len(df_sel)} total")
+    logger.info(f"✅ Variance rows found: {len(result)} out of {len(df_sel)} total")
     if not result.empty:
         logger.info(f"  Sample:\n{result.head(5).to_string()}")
     return result
@@ -301,7 +295,7 @@ def build_html_body(variance_df, total_variance):
     <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
       <tr style="background:#1F3864;">
         <td style="padding:10px 16px;color:#FFFFFF;font-size:15px;font-weight:bold;">
-          \U0001f4ca Physical FG vs SAP \u2014 Variance Summary
+          📊 Physical FG vs SAP — Variance Summary
         </td>
       </tr>
       <tr style="background:#F0F4FA;">
@@ -319,7 +313,7 @@ def build_html_body(variance_df, total_variance):
     if variance_df.empty:
         body_content = """
         <p style="color:#27AE60;font-weight:bold;font-size:14px;">
-          \u2705 No variance exceptions found. All records are currently balanced.
+          ✅ No variance exceptions found. All records are currently balanced.
         </p>
         """
     else:
@@ -358,14 +352,14 @@ def build_html_body(variance_df, total_variance):
           <tbody>{data_rows_html}</tbody>
         </table>
         <p style="font-size:12px;color:#555;margin-top:8px;">
-          \U0001f534 Red rows = SAP has excess (negative variance) &nbsp;|
-          &nbsp;\U0001f7e0 Amber rows = Physical stock exceeds SAP (positive variance)
+          🔴 Red rows = SAP has excess (negative variance) &nbsp;|
+          &nbsp;🟠 Amber rows = Physical stock exceeds SAP (positive variance)
         </p>
         """
 
     html = f"""<!DOCTYPE html>
 <html><body style="font-family:Calibri,Arial,sans-serif;font-size:13px;color:#333;margin:20px;">
-  <h2 style="color:#1F3864;margin-bottom:6px;">Indus Physical FG vs SAP \u2014 Variance Report</h2>
+  <h2 style="color:#1F3864;margin-bottom:6px;">Indus Physical FG vs SAP — Variance Report</h2>
   <hr style="border:1px solid #1F3864;margin-bottom:16px;">
   {summary_banner}
   {body_content}
@@ -379,7 +373,7 @@ def build_html_body(variance_df, total_variance):
 # BUILD EXCEL ATTACHMENT
 # ============================================================
 def build_excel_attachment(variance_df, total_variance):
-    logger.info("\U0001f4ce Building Excel attachment...")
+    logger.info("📎 Building Excel attachment...")
     wb = Workbook()
     ws = wb.active
     subject_safe = re.sub(r'[\\/*?:\[\]]', '_', EmailConfig.SUBJECT)[:31]
@@ -457,14 +451,14 @@ def build_excel_attachment(variance_df, total_variance):
     buf = BytesIO()
     wb.save(buf)
     buf.seek(0)
-    logger.info("\u2705 Excel attachment built")
+    logger.info("✅ Excel attachment built")
     return buf.read()
 
 # ============================================================
 # SEND EMAIL
 # ============================================================
 def send_email(mail_token, html_body, excel_bytes):
-    logger.info("\U0001f4e7 Sending email via Microsoft Graph...")
+    logger.info("📧 Sending email via Microsoft Graph...")
     attachment_b64 = base64.b64encode(excel_bytes).decode("utf-8")
     payload = {
         "message": {
@@ -491,16 +485,16 @@ def send_email(mail_token, html_body, excel_bytes):
         timeout=60
     )
     if resp.status_code == 202:
-        logger.info("\u2705 Email sent successfully (HTTP 202)")
+        logger.info("✅ Email sent successfully (HTTP 202)")
     else:
-        raise Exception(f"Email send failed: {resp.status_code} \u2014 {resp.text[:400]}")
+        raise Exception(f"Email send failed: {resp.status_code} — {resp.text[:400]}")
 
 # ============================================================
 # MAIN
 # ============================================================
 def main():
     logger.info("=" * 60)
-    logger.info("FG VARIANCE EMAIL REPORTER \u2014 START")
+    logger.info("FG VARIANCE EMAIL REPORTER — START")
     logger.info("=" * 60)
     try:
         sp_token   = get_sharepoint_token()
@@ -511,10 +505,10 @@ def main():
         excel_bytes        = build_excel_attachment(variance_df, total_variance)
         send_email(mail_token, html_body, excel_bytes)
         logger.info("=" * 60)
-        logger.info("FG VARIANCE EMAIL REPORTER \u2014 COMPLETE")
+        logger.info("FG VARIANCE EMAIL REPORTER — COMPLETE")
         logger.info("=" * 60)
     except Exception as e:
-        logger.error(f"\u274c Fatal error: {e}")
+        logger.error(f"❌ Fatal error: {e}")
         traceback.print_exc()
         sys.exit(1)
 
