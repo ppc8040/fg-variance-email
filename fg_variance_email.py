@@ -78,7 +78,7 @@ class SharePointConfig:
 
 
 class EmailConfig:
-    SENDER_EMAIL = "logisticsdbx@indusair.ae"
+    SENDER_EMAIL = "releases@indusair.ae"
     TO_EMAILS = ["siddhesh.mandhana@indusair.ae"]
     CC_EMAILS = []
     SUBJECT = f"Indus Physical FG vs SAP — Variance Report [{datetime.now().strftime('%d-%b-%Y')}]"
