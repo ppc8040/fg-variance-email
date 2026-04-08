@@ -240,14 +240,14 @@ def filter_variance_rows(df):
     total_cols = df.shape[1]
     logger.info(f" Total columns available: {total_cols}")
 
-    if total_cols < 11:
+    if total_cols < 12:
         raise Exception(
             f"Expected at least 11 columns (A–K), but got {total_cols}. "
             f"Check HEADER_ROW_INDEX (currently {SharePointConfig.HEADER_ROW_INDEX})."
         )
 
-    # A, B, E, H, I, J, K
-    df_sel = df.iloc[:, [0, 1, 4, 7, 8, 9, 10]].copy()
+    # A, B, E, H, I, J, K, L
+    df_sel = df.iloc[:, [0, 1, 4, 7, 8, 9, 10, 11]].copy()
     df_sel.columns = [
         "Indus Part",
         "Customer",
@@ -255,7 +255,8 @@ def filter_variance_rows(df):
         "Production FG Total",
         "SAP Quantities (MB52_1000)",
         "SAP Quantities (MB52_2000)",
-        "Final Variance (Physical vs SAP)"
+        "Final Variance (Physical vs SAP)",
+        "Remarks"
     ]
 
     before = len(df_sel)
@@ -378,6 +379,7 @@ def build_html_body(variance_df, total_variance):
             ("SAP Quantities (MB52_1000)", "150px", "#1F3864", "#FFFFFF"),
             ("SAP Quantities (MB52_2000)", "150px", "#1F3864", "#FFFFFF"),
             ("Final Variance (Physical vs SAP)", "170px", "#C0392B", "#FFFFFF"),
+            ("Remarks", "260px", "#1F3864", "#FFFFFF"),
         ]
 
         header_row = "".join(
@@ -394,13 +396,18 @@ def build_html_body(variance_df, total_variance):
             cells = []
             for col, _, _, _ in col_cfg:
                 value = row[col]
-                align = "left" if col in ("Indus Part", "Customer") else "right"
+                align = "left" if col in ["Indus Part", "Customer", "Remarks"] else "right"
 
                 if col == "Final Variance (Physical vs SAP)":
                     display = fmt_var(value)
                     bg = var_bg
                     color = "#000000"
                     weight = "bold"
+                elif col == "Remarks":
+                    display = "" if pd.isna(value) else str(value)
+                    bg = row_bg
+                    color = "#000000"
+                    weight = "normal"
                 else:
                     display = fmt(value)
                     bg = row_bg
@@ -512,7 +519,7 @@ def build_excel_attachment(variance_df):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.border = border
 
-            if col_name in ("Indus Part", "Customer"):
+            if col_name in ("Indus Part", "Customer", "Remarks"):
                 cell.alignment = left_align
             else:
                 cell.alignment = right_align
@@ -537,6 +544,7 @@ def build_excel_attachment(variance_df):
         "SAP Quantities (MB52_1000)": 21,
         "SAP Quantities (MB52_2000)": 21,
         "Final Variance (Physical vs SAP)": 24,
+        "Remarks": 40,
     }
 
     for idx, col_name in enumerate(columns, start=1):
