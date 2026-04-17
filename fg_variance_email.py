@@ -458,8 +458,8 @@ def build_html_body(variance_df, total_variance):
         <br>
         <p>
             Regards,<br>
-            <b>Sharon Patil</b><br>
-            Logistics<br>
+            <b>Siddhesh Mandhana</b><br>
+            SAP Functional Consultant<br>
             Indus International FZC, Sharjah
         </p>
     </body>
