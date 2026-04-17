@@ -301,27 +301,29 @@ def filter_variance_rows(df):
 def build_html_body(variance_df, total_variance):
     run_date = datetime.now().strftime("%d-%b-%Y %H:%M")
 
-    def variance_row_colour(val):
+    def variance_row_style(val):
+        """Returns (row_bg, row_text) tuple for a variance value."""
         try:
             v = float(val)
         except (ValueError, TypeError):
-            return "#FFFFFF"
+            return "#FFFFFF", "#1F1F1F"
         if v < 0:
-            return "#FFD7D7"
+            return "#ffcccc", "#7a0000"   # light red bg, deep red text
         if v > 0:
-            return "#FFF3CD"
-        return "#FFFFFF"
-
-    def variance_cell_colour(val):
+            return "#fff2cc", "#7a3800"   # light amber bg, deep amber text
+        return "#FFFFFF", "#1F1F1F"
+    
+    def variance_cell_style(val):
+        """Returns (cell_bg, cell_text) tuple for the variance cell itself."""
         try:
             v = float(val)
         except (ValueError, TypeError):
-            return "#FFFFFF"
+            return "#FFFFFF", "#888888"
         if v < 0:
-            return "#FF6B6B"
+            return "#cc0000", "#FFFFFF"   # strong red, white text
         if v > 0:
-            return "#FFA500"
-        return "#FFFFFF"
+            return "#cc6600", "#FFFFFF"   # strong orange, white text
+        return "#FFFFFF", "#888888"
 
     def fmt(v):
         try:
@@ -390,8 +392,8 @@ def build_html_body(variance_df, total_variance):
 
         body_rows = ""
         for _, row in variance_df.iterrows():
-            row_bg = variance_row_colour(row["Final Variance (Physical vs SAP)"])
-            var_bg = variance_cell_colour(row["Final Variance (Physical vs SAP)"])
+            row_bg, row_text = variance_row_style(row["Final Variance (Physical vs SAP)"])
+            var_bg, var_text = variance_cell_style(row["Final Variance (Physical vs SAP)"])
 
             cells = []
             for col, _, _, _ in col_cfg:
@@ -401,17 +403,17 @@ def build_html_body(variance_df, total_variance):
                 if col == "Final Variance (Physical vs SAP)":
                     display = fmt_var(value)
                     bg = var_bg
-                    color = "#000000"
+                    color = var_text
                     weight = "bold"
                 elif col == "Remarks":
                     display = "" if pd.isna(value) else str(value)
                     bg = row_bg
-                    color = "#000000"
+                    color = row_text
                     weight = "normal"
                 else:
                     display = fmt(value)
                     bg = row_bg
-                    color = "#000000"
+                    color = row_text
                     weight = "normal"
 
                 cells.append(
@@ -476,10 +478,15 @@ def build_excel_attachment(variance_df):
     black_font = Font(color="000000", bold=False)
     black_bold = Font(color="000000", bold=True)
 
-    neg_row_fill = PatternFill(fill_type="solid", fgColor="FFD7D7")
-    pos_row_fill = PatternFill(fill_type="solid", fgColor="FFF3CD")
-    neg_var_fill = PatternFill(fill_type="solid", fgColor="FF6B6B")
-    pos_var_fill = PatternFill(fill_type="solid", fgColor="FFA500")
+    neg_row_fill  = PatternFill(fill_type="solid", fgColor="FFCCCC")   # light red
+    pos_row_fill  = PatternFill(fill_type="solid", fgColor="FFF2CC")   # light amber
+    neg_var_fill  = PatternFill(fill_type="solid", fgColor="CC0000")   # strong red
+    pos_var_fill  = PatternFill(fill_type="solid", fgColor="CC6600")   # strong orange
+    
+    neg_row_font  = Font(color="7A0000", bold=False)   # deep red text on light red rows
+    pos_row_font  = Font(color="7A3800", bold=False)   # deep amber text on light amber rows
+    neg_var_font  = Font(color="FFFFFF", bold=True)    # white text on strong red cell
+    pos_var_font  = Font(color="FFFFFF", bold=True)    # white text on strong orange cell
 
     left_align = Alignment(horizontal="left", vertical="center")
     right_align = Alignment(horizontal="right", vertical="center")
@@ -525,13 +532,25 @@ def build_excel_attachment(variance_df):
                 cell.alignment = right_align
 
             if col_name == "Final Variance (Physical vs SAP)":
-                if var_fill:
-                    cell.fill = var_fill
-                cell.font = black_bold
+                if variance_val < 0:
+                    cell.fill = neg_var_fill
+                    cell.font = neg_var_font
+                elif variance_val > 0:
+                    cell.fill = pos_var_fill
+                    cell.font = pos_var_font
+                else:
+                    cell.font = black_font
             else:
-                if row_fill:
-                    cell.fill = row_fill
-                cell.font = black_font
+                if variance_val < 0:
+                    if row_fill:
+                        cell.fill = neg_row_fill
+                    cell.font = neg_row_font
+                elif variance_val > 0:
+                    if row_fill:
+                        cell.fill = pos_row_fill
+                    cell.font = pos_row_font
+                else:
+                    cell.font = black_font
 
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
