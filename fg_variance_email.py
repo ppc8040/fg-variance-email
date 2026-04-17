@@ -86,9 +86,9 @@ class SharePointConfig:
 
 
 class EmailConfig:
-    SENDER_EMAIL = "releases@indusair.ae"
-    TO_EMAILS = ["siddhesh.mandhana@indusair.ae"]
-    CC_EMAILS = []
+    SENDER_EMAIL = "siddhesh.mandhana@indusair.ae"
+    TO_EMAILS = ["brijendu.pandey@indusair.ae", "aanand.sr@indusair.ae", "meet.shah@indusair.ae", "abhir.bhomavat@indusair.ae", "shabbir.kachwala@indusair.ae"]
+    CC_EMAILS = ["prodndbx3@indusair.ae", "onkar.shahane@indusair.ae"]
     SUBJECT = f"Indus Physical FG vs SAP — Variance Report [{datetime.now().strftime('%d-%b-%Y')}]"
     ATTACHMENT_FILE_NAME = f"Indus_Physical_FG_vs_SAP_Variance_Report_{datetime.now().strftime('%d-%b-%Y')}.xlsx"
 
