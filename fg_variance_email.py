@@ -4,18 +4,27 @@ INDUS PHYSICAL FG vs SAP — VARIANCE EMAIL REPORTER
 
 Reads "Physical FG Variance Report" worksheet from the SharePoint file
 "Indus Ultimate Stock Recon.xlsx", filters rows where column K
-(Final Variance Physical vs SAP) is non-zero, sends a formatted HTML
-email via Microsoft Graph API, and attaches the same variance report
-as a downloadable Excel file.
+(Physical vs MB52_1000) contains a numeric variance (non-"OK" entries),
+sends a formatted HTML email via Microsoft Graph API, and attaches the
+same variance report as a downloadable Excel file.
 
-Columns included in report:
+Columns included in report (A–K):
 A – Indus Part
 B – Customer
-E – Physical Warehouse Total
-H – Production FG Total
+C – M4_STORE
+D – M4
+E – M5
+F – M6
+G – M16_STORE
+H – Physical Total
 I – SAP Quantities (MB52_1000)
 J – SAP Quantities (MB52_2000)
-K – Final Variance (Physical vs SAP)
+K – Physical vs MB52_1000  ← variance filter column
+
+Sheet layout:
+  Row 3 (index 2): Grand Total Variance in column K (K3)
+  Row 4 (index 3): Column headers A4:K4
+  Row 5+          : Data rows
 
 The Excel attachment is formatted with borders, fills, alignment,
 and a worksheet name derived from the email subject.
@@ -71,9 +80,9 @@ class SharePointConfig:
     SITE_ID = "201c767f-23cc-4eff-b76c-47a275706531,094b21f9-6ed4-47c3-a751-3b217a18b98e"
     FILE_NAME = "Indus Ultimate Stock Recon.xlsx"
     WORKSHEET_NAME = "Physical FG Variance Report"
-    HEADER_ROW_INDEX = 3
-    TOTAL_VARIANCE_ROW_INDEX = 1
-    TOTAL_VARIANCE_COL_INDEX = 10  # K column (0-based index)
+    HEADER_ROW_INDEX = 3          # Row 4 (0-based index 3) holds A4:K4 headers
+    TOTAL_VARIANCE_ROW_INDEX = 2  # Row 3 (0-based index 2) holds grand total
+    TOTAL_VARIANCE_COL_INDEX = 10 # Column K (0-based index 10)
 
 
 class EmailConfig:
@@ -208,7 +217,7 @@ def read_worksheet(sp_token):
     try:
         total_variance_raw = values[SharePointConfig.TOTAL_VARIANCE_ROW_INDEX][SharePointConfig.TOTAL_VARIANCE_COL_INDEX]
         total_variance = float(total_variance_raw) if total_variance_raw not in ("", None) else 0
-        logger.info(f"📊 Total variance (K2): {total_variance}")
+        logger.info(f"📊 Total variance (K3): {total_variance}")
     except (IndexError, ValueError, TypeError) as e:
         logger.warning(f"⚠️ Could not read total variance cell: {e}. Defaulting to 0.")
 
@@ -240,23 +249,26 @@ def filter_variance_rows(df):
     total_cols = df.shape[1]
     logger.info(f" Total columns available: {total_cols}")
 
-    if total_cols < 12:
+    if total_cols < 11:
         raise Exception(
             f"Expected at least 11 columns (A–K), but got {total_cols}. "
             f"Check HEADER_ROW_INDEX (currently {SharePointConfig.HEADER_ROW_INDEX})."
         )
 
-    # A, B, E, H, I, J, K, L
-    df_sel = df.iloc[:, [0, 1, 4, 7, 8, 9, 10, 11]].copy()
+    # Select all 11 columns A–K (indices 0–10)
+    df_sel = df.iloc[:, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]].copy()
     df_sel.columns = [
         "Indus Part",
         "Customer",
-        "Physical Warehouse Total",
-        "Production FG Total",
+        "M4_STORE",
+        "M4",
+        "M5",
+        "M6",
+        "M16_STORE",
+        "Physical Total",
         "SAP Quantities (MB52_1000)",
         "SAP Quantities (MB52_2000)",
-        "Final Variance (Physical vs SAP)",
-        "Remarks"
+        "Physical vs MB52_1000",
     ]
 
     before = len(df_sel)
@@ -268,27 +280,23 @@ def filter_variance_rows(df):
     ].copy()
     logger.info(f" Dropped {before - len(df_sel)} blank rows. Remaining: {len(df_sel)}")
 
-    numeric_cols = [
-        "Physical Warehouse Total",
-        "Production FG Total",
+    numeric_quantity_cols = [
+        "M4_STORE", "M4", "M5", "M6", "M16_STORE",
+        "Physical Total",
         "SAP Quantities (MB52_1000)",
         "SAP Quantities (MB52_2000)",
-        "Final Variance (Physical vs SAP)"
     ]
-    for col in numeric_cols:
-        df_sel[col] = pd.to_numeric(df_sel[col], errors="coerce")
+    for col in numeric_quantity_cols:
+        df_sel[col] = pd.to_numeric(df_sel[col], errors="coerce").fillna(0)
 
-    df_sel["Final Variance (Physical vs SAP)"] = df_sel["Final Variance (Physical vs SAP)"].fillna(0)
-
-    result = df_sel[df_sel["Final Variance (Physical vs SAP)"] != 0].copy()
-
-    for col in [
-        "Physical Warehouse Total",
-        "Production FG Total",
-        "SAP Quantities (MB52_1000)",
-        "SAP Quantities (MB52_2000)"
-    ]:
-        result[col] = result[col].fillna(0)
+    # Filter: keep only rows where col K is numeric (not "OK", not blank)
+    variance_raw = df_sel["Physical vs MB52_1000"].astype(str).str.strip()
+    is_ok = variance_raw.str.upper() == "OK"
+    is_blank = variance_raw.isin(["", "nan", "None"])
+    df_sel["Physical vs MB52_1000"] = pd.to_numeric(
+        df_sel["Physical vs MB52_1000"], errors="coerce"
+    )
+    result = df_sel[~is_ok & ~is_blank & df_sel["Physical vs MB52_1000"].notna()].copy()
 
     logger.info(f"✅ Variance rows found: {len(result)} out of {len(df_sel)} total")
     if not result.empty:
@@ -301,28 +309,28 @@ def filter_variance_rows(df):
 def build_html_body(variance_df, total_variance):
     run_date = datetime.now().strftime("%d-%b-%Y %H:%M")
 
+    VARIANCE_COL = "Physical vs MB52_1000"
+
     def variance_row_style(val):
-        """Returns (row_bg, row_text) tuple for a variance value."""
         try:
             v = float(val)
         except (ValueError, TypeError):
             return "#FFFFFF", "#1F1F1F"
         if v < 0:
-            return "#ffcccc", "#7a0000"   # light red bg, deep red text
+            return "#ffcccc", "#7a0000"
         if v > 0:
-            return "#fff2cc", "#7a3800"   # light amber bg, deep amber text
+            return "#fff2cc", "#7a3800"
         return "#FFFFFF", "#1F1F1F"
-    
+
     def variance_cell_style(val):
-        """Returns (cell_bg, cell_text) tuple for the variance cell itself."""
         try:
             v = float(val)
         except (ValueError, TypeError):
             return "#FFFFFF", "#888888"
         if v < 0:
-            return "#cc0000", "#FFFFFF"   # strong red, white text
+            return "#cc0000", "#FFFFFF"
         if v > 0:
-            return "#cc6600", "#FFFFFF"   # strong orange, white text
+            return "#cc6600", "#FFFFFF"
         return "#FFFFFF", "#888888"
 
     def fmt(v):
@@ -374,14 +382,17 @@ def build_html_body(variance_df, total_variance):
         """
     else:
         col_cfg = [
-            ("Indus Part", "130px", "#1F3864", "#FFFFFF"),
-            ("Customer", "110px", "#1F3864", "#FFFFFF"),
-            ("Physical Warehouse Total", "150px", "#1F3864", "#FFFFFF"),
-            ("Production FG Total", "145px", "#1F3864", "#FFFFFF"),
-            ("SAP Quantities (MB52_1000)", "150px", "#1F3864", "#FFFFFF"),
-            ("SAP Quantities (MB52_2000)", "150px", "#1F3864", "#FFFFFF"),
-            ("Final Variance (Physical vs SAP)", "170px", "#C0392B", "#FFFFFF"),
-            ("Remarks", "260px", "#1F3864", "#FFFFFF"),
+            ("Indus Part",                  "120px", "#1F3864", "#FFFFFF"),
+            ("Customer",                    "110px", "#1F3864", "#FFFFFF"),
+            ("M4_STORE",                    "90px",  "#1F3864", "#FFFFFF"),
+            ("M4",                          "70px",  "#1F3864", "#FFFFFF"),
+            ("M5",                          "70px",  "#1F3864", "#FFFFFF"),
+            ("M6",                          "70px",  "#1F3864", "#FFFFFF"),
+            ("M16_STORE",                   "90px",  "#1F3864", "#FFFFFF"),
+            ("Physical Total",              "120px", "#1F3864", "#FFFFFF"),
+            ("SAP Quantities (MB52_1000)",  "145px", "#1F3864", "#FFFFFF"),
+            ("SAP Quantities (MB52_2000)",  "145px", "#1F3864", "#FFFFFF"),
+            ("Physical vs MB52_1000",       "155px", "#C0392B", "#FFFFFF"),
         ]
 
         header_row = "".join(
@@ -392,24 +403,19 @@ def build_html_body(variance_df, total_variance):
 
         body_rows = ""
         for _, row in variance_df.iterrows():
-            row_bg, row_text = variance_row_style(row["Final Variance (Physical vs SAP)"])
-            var_bg, var_text = variance_cell_style(row["Final Variance (Physical vs SAP)"])
+            row_bg, row_text = variance_row_style(row[VARIANCE_COL])
+            var_bg, var_text = variance_cell_style(row[VARIANCE_COL])
 
             cells = []
             for col, _, _, _ in col_cfg:
                 value = row[col]
-                align = "left" if col in ["Indus Part", "Customer", "Remarks"] else "right"
+                align = "left" if col in ("Indus Part", "Customer") else "right"
 
-                if col == "Final Variance (Physical vs SAP)":
+                if col == VARIANCE_COL:
                     display = fmt_var(value)
                     bg = var_bg
                     color = var_text
                     weight = "bold"
-                elif col == "Remarks":
-                    display = "" if pd.isna(value) else str(value)
-                    bg = row_bg
-                    color = row_text
-                    weight = "normal"
                 else:
                     display = fmt(value)
                     bg = row_bg
@@ -465,6 +471,8 @@ def build_html_body(variance_df, total_variance):
 # EXCEL ATTACHMENT
 # ============================================================
 def build_excel_attachment(variance_df):
+    VARIANCE_COL = "Physical vs MB52_1000"
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Variance Report"
@@ -473,23 +481,22 @@ def build_excel_attachment(variance_df):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
     header_blue_fill = PatternFill(fill_type="solid", fgColor="1F3864")
-    header_red_fill = PatternFill(fill_type="solid", fgColor="C0392B")
-    white_bold = Font(color="FFFFFF", bold=True)
-    black_font = Font(color="000000", bold=False)
-    black_bold = Font(color="000000", bold=True)
+    header_red_fill  = PatternFill(fill_type="solid", fgColor="C0392B")
+    white_bold       = Font(color="FFFFFF", bold=True)
+    black_font       = Font(color="000000", bold=False)
 
-    neg_row_fill  = PatternFill(fill_type="solid", fgColor="FFCCCC")   # light red
-    pos_row_fill  = PatternFill(fill_type="solid", fgColor="FFF2CC")   # light amber
-    neg_var_fill  = PatternFill(fill_type="solid", fgColor="CC0000")   # strong red
-    pos_var_fill  = PatternFill(fill_type="solid", fgColor="CC6600")   # strong orange
-    
-    neg_row_font  = Font(color="7A0000", bold=False)   # deep red text on light red rows
-    pos_row_font  = Font(color="7A3800", bold=False)   # deep amber text on light amber rows
-    neg_var_font  = Font(color="FFFFFF", bold=True)    # white text on strong red cell
-    pos_var_font  = Font(color="FFFFFF", bold=True)    # white text on strong orange cell
+    neg_row_fill = PatternFill(fill_type="solid", fgColor="FFCCCC")
+    pos_row_fill = PatternFill(fill_type="solid", fgColor="FFF2CC")
+    neg_var_fill = PatternFill(fill_type="solid", fgColor="CC0000")
+    pos_var_fill = PatternFill(fill_type="solid", fgColor="CC6600")
 
-    left_align = Alignment(horizontal="left", vertical="center")
-    right_align = Alignment(horizontal="right", vertical="center")
+    neg_row_font = Font(color="7A0000", bold=False)
+    pos_row_font = Font(color="7A3800", bold=False)
+    neg_var_font = Font(color="FFFFFF", bold=True)
+    pos_var_font = Font(color="FFFFFF", bold=True)
+
+    left_align   = Alignment(horizontal="left",   vertical="center")
+    right_align  = Alignment(horizontal="right",  vertical="center")
     center_align = Alignment(horizontal="center", vertical="center")
 
     columns = list(variance_df.columns)
@@ -498,7 +505,7 @@ def build_excel_attachment(variance_df):
         cell = ws.cell(row=1, column=col_idx, value=col_name)
         cell.border = border
         cell.alignment = center_align
-        if col_name == "Final Variance (Physical vs SAP)":
+        if col_name == VARIANCE_COL:
             cell.fill = header_red_fill
             cell.font = white_bold
         else:
@@ -507,31 +514,21 @@ def build_excel_attachment(variance_df):
 
     for row_idx, (_, row) in enumerate(variance_df.iterrows(), start=2):
         try:
-            variance_val = float(row["Final Variance (Physical vs SAP)"])
+            variance_val = float(row[VARIANCE_COL])
         except (ValueError, TypeError):
             variance_val = 0
-
-        if variance_val < 0:
-            row_fill = neg_row_fill
-            var_fill = neg_var_fill
-        elif variance_val > 0:
-            row_fill = pos_row_fill
-            var_fill = pos_var_fill
-        else:
-            row_fill = None
-            var_fill = None
 
         for col_idx, col_name in enumerate(columns, start=1):
             value = row[col_name]
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.border = border
 
-            if col_name in ("Indus Part", "Customer", "Remarks"):
+            if col_name in ("Indus Part", "Customer"):
                 cell.alignment = left_align
             else:
                 cell.alignment = right_align
 
-            if col_name == "Final Variance (Physical vs SAP)":
+            if col_name == VARIANCE_COL:
                 if variance_val < 0:
                     cell.fill = neg_var_fill
                     cell.font = neg_var_font
@@ -542,12 +539,10 @@ def build_excel_attachment(variance_df):
                     cell.font = black_font
             else:
                 if variance_val < 0:
-                    if row_fill:
-                        cell.fill = neg_row_fill
+                    cell.fill = neg_row_fill
                     cell.font = neg_row_font
                 elif variance_val > 0:
-                    if row_fill:
-                        cell.fill = pos_row_fill
+                    cell.fill = pos_row_fill
                     cell.font = pos_row_font
                 else:
                     cell.font = black_font
@@ -556,20 +551,22 @@ def build_excel_attachment(variance_df):
     ws.auto_filter.ref = ws.dimensions
 
     widths = {
-        "Indus Part": 16,
-        "Customer": 14,
-        "Physical Warehouse Total": 22,
-        "Production FG Total": 20,
-        "SAP Quantities (MB52_1000)": 21,
-        "SAP Quantities (MB52_2000)": 21,
-        "Final Variance (Physical vs SAP)": 24,
-        "Remarks": 40,
+        "Indus Part":                 16,
+        "Customer":                   14,
+        "M4_STORE":                   12,
+        "M4":                         10,
+        "M5":                         10,
+        "M6":                         10,
+        "M16_STORE":                  12,
+        "Physical Total":             16,
+        "SAP Quantities (MB52_1000)": 22,
+        "SAP Quantities (MB52_2000)": 22,
+        "Physical vs MB52_1000":      22,
     }
 
     for idx, col_name in enumerate(columns, start=1):
-        ws.column_dimensions[get_column_letter(idx)].width = widths.get(col_name, 18)
+        ws.column_dimensions[get_column_letter(idx)].width = widths.get(col_name, 14)
 
-    output = base64.b64encode(b"")  # placeholder to keep structure obvious
     from io import BytesIO
     buffer = BytesIO()
     wb.save(buffer)
