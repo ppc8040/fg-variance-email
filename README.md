@@ -1,21 +1,62 @@
-# Indus Physical FG vs SAP — Variance Email Reporter
+# FG Variance Email Reporter
 
-Automated GitHub Actions workflow that reads the **Physical FG Variance Report** worksheet from `Indus Ultimate Stock Recon.xlsx` on SharePoint, filters rows where the physical count differs from SAP stock (MB52_1000), and sends a formatted HTML email with an Excel attachment via Microsoft Graph API.
+Automated Python tool that reads the **Physical FG Variance Report** from a SharePoint Excel file, filters out variance exceptions, and sends a formatted HTML email with an Excel attachment — all via the **Microsoft Graph API**.
 
-## What It Does
+---
 
-- Authenticates to Microsoft 365 using two separate MSAL app registrations (SharePoint read + Mail send)
-- Opens a read-only workbook session on the SharePoint Excel file via Graph API
-- Reads columns A–K: Indus Part, Customer, M4_STORE, M4, M5, M6, M16_STORE, Physical Total, SAP MB52_1000, SAP MB52_2000, Variance
-- Filters to only rows where the variance column (K) is a numeric value — skips rows marked `OK` or blank
-- Builds a colour-coded HTML email: 🔴 red rows = SAP has excess (negative), 🟠 amber rows = physical exceeds SAP (positive)
-- Attaches a formatted Excel file with the same variance data (borders, fills, auto-filter, freeze pane)
-- Sends to the production team distribution list with CC to operations
+## Overview
 
-## Columns Reported (A–K)
+This tool compares **physical finished goods (FG) stock** against **SAP quantities (MB52)** and reports all discrepancies to the relevant stakeholders daily. It handles two scenarios:
 
-| Column | Field |
-|--------|-------|
+- 🔴 **Negative variance** — SAP shows excess over physical count
+- 🟠 **Positive variance** — Physical stock exceeds SAP
+
+---
+
+## Repository Structure
+
+```
+fg-variance-email/
+├── fg_variance_email.py          # Main script — reads SharePoint, filters, emails
+├── fg_variance_admin_email.py    # Admin variant of the email script
+├── requirements.txt              # Python dependencies
+└── .github/                      # GitHub Actions workflows
+```
+
+---
+
+## Scripts
+
+### `fg_variance_email.py`
+Core automation script. Executes the full pipeline:
+
+1. Authenticates to SharePoint and Microsoft Graph using MSAL (two separate app registrations)
+2. Opens a workbook session on `Indus Ultimate Stock Recon.xlsx` via Graph API
+3. Reads the `Physical FG Variance Report` worksheet's used range
+4. Filters rows where column K (`Physical vs MB52_1000`) is a **numeric variance** (excludes "OK" and blank entries)
+5. Builds a styled HTML email body with a color-coded variance table
+6. Builds a formatted `.xlsx` attachment with borders, fills, and auto-filter
+7. Sends the email via `POST /users/{sender}/sendMail` with the Excel as a base64 attachment
+
+### `fg_variance_admin_email.py`
+Admin-targeted variant of the same pipeline — likely uses a different recipient list or includes additional detail for internal review.
+
+---
+
+## Data Source
+
+| Property | Value |
+|---|---|
+| File | `Indus Ultimate Stock Recon.xlsx` |
+| Worksheet | `Physical FG Variance Report` |
+| Header Row | Row 4 (index 3) |
+| Grand Total Variance Cell | K3 (row index 2, col index 10) |
+| Variance Filter Column | K — `Physical vs MB52_1000` |
+
+**Columns A–K included in the report:**
+
+| Col | Field |
+|-----|-------|
 | A | Indus Part |
 | B | Customer |
 | C | M4_STORE |
@@ -28,41 +69,61 @@ Automated GitHub Actions workflow that reads the **Physical FG Variance Report**
 | J | SAP Quantities (MB52_2000) |
 | K | Physical vs MB52_1000 ← variance filter |
 
-## Tech Stack
+---
 
-- **Python 3.11**
-- `msal` — Microsoft identity / OAuth2 token acquisition
-- `requests` — Graph API calls
-- `pandas` — DataFrame filtering and processing
-- `openpyxl` — Formatted Excel attachment generation
-- **GitHub Actions** — scheduled execution
+## Email Output
 
-## GitHub Actions
+- **To:** Brijendu Pandey, Aanand SR, Meet Shah, Abhir Bhomavat, Shabbir Kachwala
+- **CC:** Production DBX, Onkar Shahane
+- **Subject:** `Indus Physical FG vs SAP — Variance Report [DD-Mon-YYYY]`
+- **Body:** Summary banner + color-coded variance table (HTML)
+- **Attachment:** `Indus_Physical_FG_vs_SAP_Variance_Report_DD-Mon-YYYY.xlsx`
 
-The workflow (`.github/workflows/`) runs on a schedule and executes `fg_variance_email.py`. Secrets for `CLIENT_ID`, `CLIENT_SECRET`, `TENANT_ID`, and related config must be set in repository secrets.
+---
 
-## Setup
+## Authentication
+
+Two separate Azure AD app registrations are used:
+
+| Purpose | Config Class |
+|---|---|
+| Read SharePoint file via Graph | `SharePointAuthConfig` |
+| Send email via Graph | `MailAuthConfig` |
+
+Both use the **client credentials flow** (`acquire_token_for_client`) with `https://graph.microsoft.com/.default` scope.
+
+> ⚠️ **Note:** Client secrets are currently hardcoded. Move these to environment variables or Azure Key Vault before any production deployment.
+
+---
+
+## Dependencies
+
+```
+msal
+requests
+pandas
+openpyxl
+```
+
+Install with:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Create a `.env` file (not committed) or set GitHub Secrets:
+---
 
-```
-SHAREPOINT_CLIENT_ID=...
-SHAREPOINT_CLIENT_SECRET=...
-MAIL_CLIENT_ID=...
-MAIL_CLIENT_SECRET=...
-TENANT_ID=...
+## Running the Script
+
+```bash
+python fg_variance_email.py
 ```
 
-## Notes
-
-- Row 3 (index 2) in the worksheet holds the Grand Total Variance in column K
-- Row 4 (index 3) holds the column headers A4:K4
-- Data begins from Row 5 onwards
-- The workbook session is always closed in a `finally` block to avoid leaving open sessions
+Logs are printed to stdout with timestamps and emoji indicators for each pipeline stage.
 
 ---
-*Indus International FZC — Internal Automation Tool*
+
+## Author
+
+**Siddhesh Mandhana**  
+SAP Functional Consultant — Indus International FZC, Sharjah
