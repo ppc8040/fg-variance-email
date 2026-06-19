@@ -3,7 +3,7 @@ name: Daily FG Variance Email
 on:
   schedule:
     # 2:00 PM Dubai time = 10:00 UTC (Dubai is UTC+4)
-    - cron: '0 10 * * 1-6'
+    - cron: '0 6,10,14 * * 1-6'
   workflow_dispatch:
 
 jobs:
@@ -20,4 +20,4 @@ jobs:
         run: pip install msal requests pandas openpyxl
 
       - name: Run variance email script
-        run: python fg_variance_email.py
+        run: python fg_variance_admin_email.py
