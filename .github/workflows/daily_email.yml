@@ -1,9 +1,6 @@
 name: Daily FG Variance Email
 
 on:
-  schedule:
-    # 2:00 PM Dubai time = 10:00 UTC (Dubai is UTC+4)
-    - cron: '0 6,10,14 * * 1-6'
   workflow_dispatch:
 
 jobs:
