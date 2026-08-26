@@ -80,6 +80,7 @@ CC_EMAILS = [
     "ppc2@indusair.ae",
     "sachin.nanekar@indusair.ae",
     "prodndbx11@indusair.ae",
+    "Shivaji.Korde@indusair.ae",
 ]
 
 # ── Change these to just yourself while testing ──────────────
