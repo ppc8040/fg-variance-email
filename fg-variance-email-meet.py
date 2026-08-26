@@ -71,6 +71,7 @@ SENDER_EMAIL = "siddhesh.mandhana@indusair.ae"
 TO_EMAILS = [
     "meet.shah@indusair.ae",
     "sachin.nanekar@indusair.ae",
+    "Shivaji.Korde@indusair.ae",
 ]
 CC_EMAILS = []
 
