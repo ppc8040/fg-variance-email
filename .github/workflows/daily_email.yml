@@ -17,4 +17,4 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run variance email script
-        run: python fg_variance_admin_email.py
+        run: python fg_variance_email_v2.py
