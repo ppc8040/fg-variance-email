@@ -93,31 +93,133 @@ ATTACHMENT_FILENAME = f"Indus Warehouse-SAP FG Variance {_NOW_DUBAI.strftime('%d
 # ============================================================
 
 def fetch_scanner_data() -> Dict[str, dict]:
-    logger.info("🗄️  Connecting to Postgres...")
+    """
+    Fetch scanner stock by Indus Part, including location-wise net stock.
+
+    The aggregate scanner_qty is retained unchanged for the email body.
+    Location fields are used only by the attached Excel file.
+    """
+    logger.info("Connecting to Postgres...")
+
     sql = """
         SELECT
-            UPPER(COALESCE(NULLIF(indus_part, ''), 'Unknown')) AS indus_part,
-            COALESCE(NULLIF(MAX(customer_part), ''), '')       AS customer_part,
-            SUM(CASE WHEN movement_type = 'STOCK_IN'
-                     THEN COALESCE(pallet_qty, 0) ELSE 0 END)
-            - SUM(CASE WHEN movement_type = 'STOCK_OUT'
-                     THEN COALESCE(pallet_qty, 0) ELSE 0 END)  AS net_qty
+            UPPER(COALESCE(NULLIF(TRIM(indus_part), ''), 'UNKNOWN')) AS indus_part,
+            COALESCE(
+                NULLIF(MAX(customer_part), ''),
+                ''
+            ) AS customer_part,
+
+            SUM(
+                CASE
+                    WHEN movement_type = 'STOCK_IN'
+                        THEN COALESCE(pallet_qty, 0)
+                    WHEN movement_type = 'STOCK_OUT'
+                        THEN -COALESCE(pallet_qty, 0)
+                    ELSE 0
+                END
+            ) AS net_qty,
+
+            SUM(
+                CASE
+                    WHEN UPPER(COALESCE(location, '')) = 'M4_STORE'
+                        AND movement_type = 'STOCK_IN'
+                        THEN COALESCE(pallet_qty, 0)
+                    WHEN UPPER(COALESCE(location, '')) = 'M4_STORE'
+                        AND movement_type = 'STOCK_OUT'
+                        THEN -COALESCE(pallet_qty, 0)
+                    ELSE 0
+                END
+            ) AS m4_store_stock,
+
+            SUM(
+                CASE
+                    WHEN UPPER(COALESCE(location, '')) = 'M4'
+                        AND movement_type = 'STOCK_IN'
+                        THEN COALESCE(pallet_qty, 0)
+                    WHEN UPPER(COALESCE(location, '')) = 'M4'
+                        AND movement_type = 'STOCK_OUT'
+                        THEN -COALESCE(pallet_qty, 0)
+                    ELSE 0
+                END
+            ) AS m4_stock,
+
+            SUM(
+                CASE
+                    WHEN UPPER(COALESCE(location, '')) = 'M5'
+                        AND movement_type = 'STOCK_IN'
+                        THEN COALESCE(pallet_qty, 0)
+                    WHEN UPPER(COALESCE(location, '')) = 'M5'
+                        AND movement_type = 'STOCK_OUT'
+                        THEN -COALESCE(pallet_qty, 0)
+                    ELSE 0
+                END
+            ) AS m5_stock,
+
+            SUM(
+                CASE
+                    WHEN UPPER(COALESCE(location, '')) = 'M6'
+                        AND movement_type = 'STOCK_IN'
+                        THEN COALESCE(pallet_qty, 0)
+                    WHEN UPPER(COALESCE(location, '')) = 'M6'
+                        AND movement_type = 'STOCK_OUT'
+                        THEN -COALESCE(pallet_qty, 0)
+                    ELSE 0
+                END
+            ) AS m6_stock,
+
+            SUM(
+                CASE
+                    WHEN UPPER(COALESCE(location, '')) = 'M16_STORE'
+                        AND movement_type = 'STOCK_IN'
+                        THEN COALESCE(pallet_qty, 0)
+                    WHEN UPPER(COALESCE(location, '')) = 'M16_STORE'
+                        AND movement_type = 'STOCK_OUT'
+                        THEN -COALESCE(pallet_qty, 0)
+                    ELSE 0
+                END
+            ) AS m16_store_stock
+
         FROM movements
         WHERE movement_type IN ('STOCK_IN', 'STOCK_OUT')
-        GROUP BY UPPER(COALESCE(NULLIF(indus_part, ''), 'Unknown'))
-        ORDER BY UPPER(COALESCE(NULLIF(indus_part, ''), 'Unknown'))
+        GROUP BY
+            UPPER(COALESCE(NULLIF(TRIM(indus_part), ''), 'UNKNOWN'))
+        ORDER BY
+            UPPER(COALESCE(NULLIF(TRIM(indus_part), ''), 'UNKNOWN'))
     """
+
     conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+
     try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        with conn.cursor(
+            cursor_factory=psycopg2.extras.RealDictCursor
+        ) as cur:
             cur.execute(sql)
             rows = cur.fetchall()
-        result = {row["indus_part"]: dict(row) for row in rows}
-        logger.info("✅  Scanner data: %d materials", len(result))
+
+        result = {}
+
+        for row in rows:
+            indus_part = str(row["indus_part"]).strip().upper()
+
+            result[indus_part] = {
+                "customer_part": row["customer_part"] or "",
+                "net_qty": int(row["net_qty"] or 0),
+                "m4_store_stock": int(row["m4_store_stock"] or 0),
+                "m4_stock": int(row["m4_stock"] or 0),
+                "m5_stock": int(row["m5_stock"] or 0),
+                "m6_stock": int(row["m6_stock"] or 0),
+                "m16_store_stock": int(row["m16_store_stock"] or 0),
+            }
+
+        logger.info(
+            "Scanner data fetched for %d material(s)",
+            len(result),
+        )
+
         return result
+
     finally:
         conn.close()
-
 
 # ============================================================
 # STEP 2 — SAP OData: plant stock for plants 1000 + 2000
@@ -163,9 +265,27 @@ def fetch_sap_stock() -> Dict[str, dict]:
         try:
             qty = float(rec.get("MatlWrhsStkQtyInMatlBaseUnit") or 0)
         except (TypeError, ValueError):
-            qty = 0.0
+            logger.warning(
+                "Skipping SAP record with invalid stock quantity: "
+                "Material=%s, Plant=%s, RawQty=%r",
+                mat,
+                plant,
+                rec.get("MatlWrhsStkQtyInMatlBaseUnit"),
+            )
+            continue
+
+        # Do not add zero-quantity SAP stock records to the reconciliation map.
+        # This also avoids creating a material entry solely from SAP zero stock.
+        if qty == 0:
+            continue
+
         if mat not in agg:
-            agg[mat] = {"material": mat, "sap_qty_1000": 0.0, "sap_qty_2000": 0.0}
+            agg[mat] = {
+                "material": mat,
+                "sap_qty_1000": 0.0,
+                "sap_qty_2000": 0.0,
+            }
+
         if plant == "1000":
             agg[mat]["sap_qty_1000"] += qty
         elif plant == "2000":
@@ -255,80 +375,276 @@ def fetch_oor_customer_codes() -> Dict[str, str]:
 
 def build_recon_rows(
     scanner_map: Dict[str, dict],
-    sap_map:     Dict[str, dict],
-    oor_map:     Dict[str, str],
+    sap_map: Dict[str, dict],
+    oor_map: Dict[str, str],
 ) -> List[dict]:
-    all_materials = sorted(set(sap_map.keys()) | set(scanner_map.keys()))
-    rows = []
-    for mat in all_materials:
-        sap  = sap_map.get(mat, {})
-        scan = scanner_map.get(mat, {})
-        sq   = int(scan.get("net_qty", 0) or 0)
-        s1   = round(float(sap.get("sap_qty_1000", 0) or 0))
-        s2   = round(float(sap.get("sap_qty_2000", 0) or 0))
-        rows.append({
-            "indus_part":       mat,
-            "customer":         oor_map.get(mat, ""),
-            "customer_part":    scan.get("customer_part", ""),
-            "scanner_qty":      sq,
-            "sap_qty_1000":     s1,
-            "sap_qty_2000":     s2,
-            "variance_vs_1000": sq - s1,
-        })
-    logger.info("✅  %d recon rows built (%d discrepant)",
-                len(rows), sum(1 for r in rows if r["variance_vs_1000"] != 0))
-    return rows
+    all_materials = sorted(
+        set(sap_map.keys()) | set(scanner_map.keys())
+    )
 
+    rows = []
+
+    for material in all_materials:
+        scanner = scanner_map.get(material, {})
+        sap = sap_map.get(material, {})
+
+        scanner_qty = int(scanner.get("net_qty", 0) or 0)
+        sap_qty_1000 = round(
+            float(sap.get("sap_qty_1000", 0) or 0)
+        )
+        sap_qty_2000 = round(
+            float(sap.get("sap_qty_2000", 0) or 0)
+        )
+
+        rows.append(
+            {
+                "indus_part": material,
+                "customer": oor_map.get(material, ""),
+                "customer_part": scanner.get("customer_part", ""),
+
+                # Used by the email body. Do not remove or rename.
+                "scanner_qty": scanner_qty,
+
+                # Used by the improved Excel attachment.
+                "m4_store_scanner_qty": int(
+                    scanner.get("m4_store_stock", 0) or 0
+                ),
+                "m4_scanner_qty": int(
+                    scanner.get("m4_stock", 0) or 0
+                ),
+                "m5_scanner_qty": int(
+                    scanner.get("m5_stock", 0) or 0
+                ),
+                "m6_scanner_qty": int(
+                    scanner.get("m6_stock", 0) or 0
+                ),
+                "m16_store_scanner_qty": int(
+                    scanner.get("m16_store_stock", 0) or 0
+                ),
+                "scanner_total": scanner_qty,
+
+                "sap_qty_1000": sap_qty_1000,
+                "sap_qty_2000": sap_qty_2000,
+                "variance_vs_1000": scanner_qty - sap_qty_1000,
+            }
+        )
+
+    logger.info(
+        "%d reconciliation rows built; %d discrepant",
+        len(rows),
+        sum(
+            1
+            for row in rows
+            if row["variance_vs_1000"] != 0
+        ),
+    )
+
+    return rows
 
 # ============================================================
 # STEP 5 — Build Excel
 # ============================================================
 
 def build_excel(rows: List[dict]) -> BytesIO:
+    """
+    Build the Excel attachment with location-wise scanner quantities.
+
+    The email body remains unchanged and continues using scanner_qty.
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "SAP Recon"
 
-    HDR_FILL   = PatternFill("solid", fgColor="1E3A5F")
-    HDR_FONT   = Font(bold=True, color="FFFFFF", size=10, name="Calibri")
-    HDR_ALIGN  = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    DATA_FONT  = Font(size=10, name="Calibri")
-    DATA_ALIGN = Alignment(vertical="center")
-    _thin      = Side(style="thin", color="CCCCCC")
-    BORDER     = Border(left=_thin, right=_thin, top=_thin, bottom=_thin)
-    NEG_FILL   = PatternFill("solid", fgColor="2D0A0A")
-    NEG_FONT   = Font(size=10, name="Calibri", color="FCA5A5")
+    HDR_FILL = PatternFill("solid", fgColor="1E3A5F")
+    HDR_FONT = Font(
+        bold=True,
+        color="FFFFFF",
+        size=10,
+        name="Calibri",
+    )
+    HDR_ALIGN = Alignment(
+        horizontal="center",
+        vertical="center",
+        wrap_text=True,
+    )
 
-    HEADERS  = ["indus_part", "customer", "customer_part",
-                "scanner_qty", "sap_qty_1000", "sap_qty_2000", "variance_vs_1000"]
-    INT_COLS = frozenset({"scanner_qty", "sap_qty_1000", "sap_qty_2000", "variance_vs_1000"})
+    DATA_FONT = Font(
+        size=10,
+        name="Calibri",
+    )
+    DATA_ALIGN = Alignment(
+        vertical="center",
+        horizontal="center",
+    )
 
-    ws.append(HEADERS)
-    ws.row_dimensions[1].height = 22
-    for cell in ws[1]:
-        cell.fill = HDR_FILL; cell.font = HDR_FONT
-        cell.alignment = HDR_ALIGN; cell.border = BORDER
-    for j in range(1, len(HEADERS) + 1):
-        ws.column_dimensions[get_column_letter(j)].width = 22
+    TEXT_ALIGN = Alignment(
+        vertical="center",
+        horizontal="left",
+    )
 
-    for i, row in enumerate(rows, start=2):
-        ws.row_dimensions[i].height = 18
-        is_neg = int(row.get("variance_vs_1000", 0)) < 0
-        for j, h in enumerate(HEADERS, start=1):
-            val      = row.get(h)
-            cell_val = int(val) if h in INT_COLS else (str(val) if val is not None else "")
-            cell     = ws.cell(row=i, column=j, value=cell_val)
-            cell.font      = NEG_FONT if is_neg else DATA_FONT
-            cell.fill      = NEG_FILL if is_neg else PatternFill()
-            cell.alignment = DATA_ALIGN
-            cell.border    = BORDER
+    THIN = Side(
+        style="thin",
+        color="CCCCCC",
+    )
+    BORDER = Border(
+        left=THIN,
+        right=THIN,
+        top=THIN,
+        bottom=THIN,
+    )
+
+    NEG_FILL = PatternFill(
+        "solid",
+        fgColor="2D0A0A",
+    )
+    NEG_FONT = Font(
+        size=10,
+        name="Calibri",
+        color="FCA5A5",
+    )
+
+    POS_FILL = PatternFill(
+        "solid",
+        fgColor="3D2800",
+    )
+    POS_FONT = Font(
+        size=10,
+        name="Calibri",
+        color="FDE68A",
+    )
+
+    HEADERS = [
+        "indus_part",
+        "customer",
+        "customer_part",
+        "m4_store_scanner_qty",
+        "m4_scanner_qty",
+        "m5_scanner_qty",
+        "m6_scanner_qty",
+        "m16_store_scanner_qty",
+        "scanner_total",
+        "sap_qty_1000",
+        "sap_qty_2000",
+        "variance_vs_1000",
+    ]
+
+    HEADER_LABELS = {
+        "indus_part": "Indus Part",
+        "customer": "Customer",
+        "customer_part": "Customer Part",
+        "m4_store_scanner_qty": "M4_STORE Scanner Qty",
+        "m4_scanner_qty": "M4 Scanner Qty",
+        "m5_scanner_qty": "M5 Scanner Qty",
+        "m6_scanner_qty": "M6 Scanner Qty",
+        "m16_store_scanner_qty": "M16_STORE Scanner Qty",
+        "scanner_total": "Scanner Total",
+        "sap_qty_1000": "SAP Qty (Plant 1000)",
+        "sap_qty_2000": "SAP Qty (Plant 2000)",
+        "variance_vs_1000": "Variance vs Plant 1000",
+    }
+
+    INTEGER_COLUMNS = frozenset(
+        {
+            "m4_store_scanner_qty",
+            "m4_scanner_qty",
+            "m5_scanner_qty",
+            "m6_scanner_qty",
+            "m16_store_scanner_qty",
+            "scanner_total",
+            "sap_qty_1000",
+            "sap_qty_2000",
+            "variance_vs_1000",
+        }
+    )
+
+    COLUMN_WIDTHS = {
+        "indus_part": 24,
+        "customer": 20,
+        "customer_part": 20,
+        "m4_store_scanner_qty": 17,
+        "m4_scanner_qty": 14,
+        "m5_scanner_qty": 14,
+        "m6_scanner_qty": 14,
+        "m16_store_scanner_qty": 18,
+        "scanner_total": 15,
+        "sap_qty_1000": 18,
+        "sap_qty_2000": 18,
+        "variance_vs_1000": 20,
+    }
+
+    ws.append([HEADER_LABELS[column] for column in HEADERS])
+    ws.row_dimensions[1].height = 32
+
+    for col_index, header in enumerate(HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_index)
+        cell.fill = HDR_FILL
+        cell.font = HDR_FONT
+        cell.alignment = HDR_ALIGN
+        cell.border = BORDER
+
+        ws.column_dimensions[
+            get_column_letter(col_index)
+        ].width = COLUMN_WIDTHS[header]
+
+    for row_index, row in enumerate(rows, start=2):
+        ws.row_dimensions[row_index].height = 18
+
+        variance = int(row.get("variance_vs_1000", 0) or 0)
+
+        if variance < 0:
+            row_fill = NEG_FILL
+            row_font = NEG_FONT
+        elif variance > 0:
+            row_fill = POS_FILL
+            row_font = POS_FONT
+        else:
+            row_fill = PatternFill()
+            row_font = DATA_FONT
+
+        for col_index, header in enumerate(HEADERS, start=1):
+            value = row.get(header, "")
+
+            if header in INTEGER_COLUMNS:
+                try:
+                    cell_value = int(value or 0)
+                except (TypeError, ValueError):
+                    cell_value = 0
+            else:
+                cell_value = str(value or "")
+
+            cell = ws.cell(
+                row=row_index,
+                column=col_index,
+                value=cell_value,
+            )
+
+            cell.font = row_font
+            cell.fill = row_fill
+            cell.alignment = (
+                TEXT_ALIGN
+                if header in {"indus_part", "customer", "customer_part"}
+                else DATA_ALIGN
+            )
+            cell.border = BORDER
+
+            if header in INTEGER_COLUMNS:
+                cell.number_format = '#,##0;[Red]-#,##0'
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = (
+        f"A1:{get_column_letter(len(HEADERS))}{max(ws.max_row, 1)}"
+    )
 
     out = BytesIO()
     wb.save(out)
     out.seek(0)
-    logger.info("✅  Excel built: %d rows", len(rows))
-    return out
 
+    logger.info(
+        "Excel attachment built with %d row(s) and location-wise scanner columns",
+        len(rows),
+    )
+
+    return out
 
 # ============================================================
 # STEP 6 — Build HTML email body
@@ -408,6 +724,10 @@ def build_html_body(rows: List[dict]) -> str:
         <h2 style="color:#1E3A5F;margin-bottom:4px;">Indus SAP Reconciliation Report</h2>
         <p style="color:#555;margin-top:0;">Scanner Qty vs SAP Plant Stock (MB52) — discrepancies only shown below</p>
         {banner}
+        <p style="margin-top:20px;font-size:13px;color:#1f1f1f;">
+            <a href="mailto:aanand.sr@indusair.ae" style="color:#1E3A5F;font-weight:bold;text-decoration:none;">@Aanand SR</a>
+            &nbsp;please advise on how to tackle these variances promptly.
+        </p>
         {table_html}
         <br>
         <p style="color:#777;font-size:11px;margin-top:12px;">Auto-generated by Indus Warehouse Tracker. Full data in attached Excel.</p>
