@@ -1,7 +1,7 @@
 """
 scripts/sap_recon_email.py
 
-SAP Recon Email Reporter — LOCAL TEST VERSION
+SAP Recon Email Reporter
 =============================================
 All credentials hardcoded. Run directly in VS Code:
     python scripts/sap_recon_email.py
@@ -73,6 +73,7 @@ TO_EMAILS = [
     "aanand.sr@indusair.ae",
     "brijendu.pandey@indusair.ae",
     "shabbir.kachwala@indusair.ae",
+    "shivaji.korde@indusair.ae",
 ]
 CC_EMAILS = [
     "meet.shah@indusair.ae",
