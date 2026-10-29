@@ -17,4 +17,9 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run variance email script
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SAP_PASSWORD: ${{ secrets.SAP_PASSWORD }}
+          SP_CLIENT_SECRET: ${{ secrets.SP_CLIENT_SECRET }}
+          MAIL_CLIENT_SECRET: ${{ secrets.MAIL_CLIENT_SECRET }}
         run: python fg-variance-email-meet.py
