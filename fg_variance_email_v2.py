@@ -11,6 +11,7 @@ Once verified, keep this file and trigger via GitHub Actions on a schedule.
 
 import base64
 import logging
+import os
 import sys
 import traceback
 from datetime import datetime
@@ -40,15 +41,22 @@ logger = logging.getLogger(__name__)
 # HARDCODED CONFIG
 # ============================================================
 
+def _require_env(name):
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f"{name} is not set - add it as a GitHub repository secret")
+    return value
+
+
 # ── Database ─────────────────────────────────────────────────
-DATABASE_URL = "postgres://udaeok46kp345o:p16a757221737effd08a392567cdd32730fde4632adf21803a2bb5127e5d2855e@c4717h2lt37nua.cluster-czrs8kj4isg7.us-east-1.rds.amazonaws.com:5432/d1faihjj66t25t"
-# Get it by running: heroku config:get DATABASE_URL --app <your-app-name>
-# It looks like: postgresql://user:pass@host:5432/dbname
+# Full connection string (postgres://user:pass@host:5432/dbname), e.g. from
+# `heroku config:get DATABASE_URL --app <your-app-name>`.
+DATABASE_URL = _require_env("DATABASE_URL")
 
 # ── SAP OData ────────────────────────────────────────────────
 SAP_BASE_URL  = "https://my409486-api.s4hana.cloud.sap/sap/opu/odata/sap/API_MATERIAL_STOCK_SRV"
-SAP_USERNAME  = "POWERBI_INTEGRATION"
-SAP_PASSWORD  = "d>xEX$dgfFjjw2=2<kbNkH-gPyu-+XnVJF%xJr)v"
+SAP_USERNAME  = os.environ.get("SAP_USERNAME", "POWERBI_INTEGRATION")
+SAP_PASSWORD  = _require_env("SAP_PASSWORD")
 SAP_PAGE_SIZE = 1000
 SAP_TIMEOUT   = 300
 SAP_SELECT    = "Material,Plant,MatlWrhsStkQtyInMatlBaseUnit"
@@ -57,14 +65,14 @@ SAP_INDUS_LETTERS = frozenset("ACI")
 
 # ── SharePoint / Graph (OOR customer codes) ──────────────────
 SP_TENANT_ID     = "ed97e9bb-e119-4bd4-ab00-307d64bdf908"
-SP_CLIENT_ID     = "a2239be7-12cd-442d-983f-ea7e316ef767"
-SP_CLIENT_SECRET = "sho8Q~sanlYEX3SKXjYJb0NSXL.gPRpdi63-tcmp"
+SP_CLIENT_ID     = os.environ.get("SP_CLIENT_ID", "a2239be7-12cd-442d-983f-ea7e316ef767")
+SP_CLIENT_SECRET = _require_env("SP_CLIENT_SECRET")
 SP_SITE_ID       = "201c767f-23cc-4eff-b76c-47a275706531,094b21f9-6ed4-47c3-a751-3b217a18b98e"
 SP_OOR_FILENAME  = "Indus Open Order Report New.xlsx"
 
 # ── Mail (Graph API) ─────────────────────────────────────────
-CLIENT_ID = "785b5fc9-1624-458d-90cb-a140dff579c7"
-CLIENT_SECRET = "Zcw8Q~YSEqXPypF4Gn_mNVpp2MVPRMM.95hjVdbP"
+CLIENT_ID = os.environ.get("MAIL_CLIENT_ID", "785b5fc9-1624-458d-90cb-a140dff579c7")
+CLIENT_SECRET = _require_env("MAIL_CLIENT_SECRET")
 AUTHORITY = "https://login.microsoftonline.com/ed97e9bb-e119-4bd4-ab00-307d64bdf908"
 
 SENDER_EMAIL = "siddhesh.mandhana@indusair.ae"
